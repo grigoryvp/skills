@@ -7,9 +7,9 @@ disable-model-invocation: true
 Проведи ревью изменений в текущей ветке двумя независимыми ревьюерами
 параллельно, затем объедини их замечания.
 
-Промпт ревью: `code-review.md`.
-JSON-схема замечаний: `code-review.schema.json`.
-Результаты складывай в scratchpad-директорию сессии (`$OUT` ниже).
+Промпт ревью: `${CLAUDE_SKILL_DIR}/code-review.md`.
+JSON-схема замечаний: `${CLAUDE_SKILL_DIR}/code-review.schema.json`.
+Результаты складывай в scratchpad-директорию сессии `$OUT`.
 
 ## Шаг 1. Запусти обоих ревьюеров
 
@@ -19,8 +19,8 @@ Codex:
 
 ```sh
 codex exec -s read-only --ephemeral \
-  --output-schema ~/dotfiles/prompts/code-review.schema.json \
-  -o "$OUT/codex-review.json" - < ~/dotfiles/prompts/code-review.md \
+  --output-schema "${CLAUDE_SKILL_DIR}/code-review.schema.json" \
+  -o "$OUT/codex-review.json" - < "${CLAUDE_SKILL_DIR}/code-review.md" \
   > "$OUT/codex-review.log" 2>&1
 ```
 
@@ -28,8 +28,8 @@ Claude:
 
 ```sh
 claude -p \
-  --json-schema "$(cat ~/dotfiles/prompts/code-review.schema.json)" \
-  < ~/dotfiles/prompts/code-review.md \
+  --json-schema "$(cat "${CLAUDE_SKILL_DIR}/code-review.schema.json")" \
+  < "${CLAUDE_SKILL_DIR}/code-review.md" \
   > "$OUT/claude-review.json" 2> "$OUT/claude-review.log"
 ```
 
