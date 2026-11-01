@@ -1,1 +1,1 @@
-# skills
+# public ai agent skills
