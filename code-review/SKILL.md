@@ -1,6 +1,7 @@
 ---
 name: code-review
 description: Ревью изменений в текущей ветке
+disable-model-invocation: true
 ---
 
 Проведи ревью изменений в текущей ветке двумя независимыми ревьюерами
