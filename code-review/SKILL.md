@@ -3,7 +3,7 @@ name: code-review
 description: Ревью изменений в текущей ветке
 disable-model-invocation: true
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
 # - Скилл заменяет встроенный /code-review
 # - Если запускать ревьюеров в фоне, то claude считает это "завершение хода"
 #   и отправляет в терминал OSC 7501 "done", так что терминал показывает
