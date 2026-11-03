@@ -2,6 +2,11 @@
 name: code-review
 description: Ревью изменений в текущей ветке
 disable-model-invocation: true
+metadata:
+  version: "1.0.1"
+# - Если запускать ревьюеров в фоне, то claude считает это "завершение хода"
+#   и отправляет в терминал OSC 7501 "done", так что терминал показывает
+#   "done". Задача при этом еще не выполнена.
 ---
 
 Проведи ревью изменений в текущей ветке двумя независимыми ревьюерами
@@ -11,29 +16,28 @@ disable-model-invocation: true
 JSON-схема замечаний: `${CLAUDE_SKILL_DIR}/code-review.schema.json`.
 Результаты складывай в scratchpad-директорию сессии `$OUT`.
 
-## Шаг 1. Запусти обоих ревьюеров
+## Шаг 1. Запусти обоих ревьюеров и дождись их
 
-Запусти обе команды через shell в фоне, параллельно.
-
-Codex:
+Запусти команду ниже одним вызовом shell и дождись результата выполнения:
 
 ```sh
 codex exec -s read-only --ephemeral \
   --output-schema "${CLAUDE_SKILL_DIR}/code-review.schema.json" \
   -o "$OUT/codex-review.json" - < "${CLAUDE_SKILL_DIR}/code-review.md" \
-  > "$OUT/codex-review.log" 2>&1
-```
+  > "$OUT/codex-review.log" 2>&1 &
+codex_pid=$!
 
-Claude:
-
-```sh
 claude -p \
   --json-schema "$(cat "${CLAUDE_SKILL_DIR}/code-review.schema.json")" \
   < "${CLAUDE_SKILL_DIR}/code-review.md" \
-  > "$OUT/claude-review.json" 2> "$OUT/claude-review.log"
+  > "$OUT/claude-review.json" 2> "$OUT/claude-review.log" &
+claude_pid=$!
+
+wait "$codex_pid"; echo "codex exit: $?"
+wait "$claude_pid"; echo "claude exit: $?"
 ```
 
-## Шаг 2. Дождись обоих ревьюеров
+## Шаг 2. Проверь результаты ревьюеров
 
 Если один из ревьюеров завершился с ошибкой или его JSON-файл отсутствует или
 пуст, покажи хвост лога и продолжай только с замечаниями второго ревьюера,
