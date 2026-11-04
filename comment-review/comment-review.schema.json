@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "situation", "verdict", "reasoning", "file", "line", "fixes"],
+  "properties": {
+    "title": { "type": "string" },
+    "situation": { "type": "string" },
+    "verdict": { "type": "string", "enum": ["fix", "optional", "done", "reject"] },
+    "reasoning": { "type": "string" },
+    "file": { "type": ["string", "null"] },
+    "line": { "type": ["integer", "null"] },
+    "fixes": { "type": "array", "items": { "type": "string" } }
+  }
+}
