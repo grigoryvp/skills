@@ -4,7 +4,7 @@ description: Ревью замечания к GitLab / GitHub MR по URL ком
 argument-hint: <URL комментария>
 disable-model-invocation: true
 metadata:
-  version: "1.0.0"
+  version: "1.0.2"
 # - Запуск ревьюеров и вывод результата повторяют скилл code-review.
 ---
 
@@ -22,15 +22,20 @@ JSON-схема оценки: `${CLAUDE_SKILL_DIR}/comment-review.schema.json`.
 Запусти команду ниже одним вызовом shell и дождись результата выполнения:
 
 ```sh
+REVIEW_URL='$ARGUMENTS' env \
+  | uvx --from jinja2-cli jinja2 --format=env --strict \
+    "${CLAUDE_SKILL_DIR}/comment-review.md" \
+  > "$OUT/comment-review-prompt.md"
+
 codex exec -s read-only --ephemeral \
   --output-schema "${CLAUDE_SKILL_DIR}/comment-review.schema.json" \
-  -o "$OUT/codex-review.json" - < "${CLAUDE_SKILL_DIR}/comment-review.md" \
+  -o "$OUT/codex-review.json" - < "$OUT/comment-review-prompt.md" \
   > "$OUT/codex-review.log" 2>&1 &
 codex_pid=$!
 
 claude -p \
   --json-schema "$(cat "${CLAUDE_SKILL_DIR}/comment-review.schema.json")" \
-  < "${CLAUDE_SKILL_DIR}/comment-review.md" \
+  < "$OUT/comment-review-prompt.md" \
   > "$OUT/claude-review.json" 2> "$OUT/claude-review.log" &
 claude_pid=$!
 
