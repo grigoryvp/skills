@@ -3,7 +3,7 @@ name: code-review
 description: Ревью изменений в текущей ветке
 disable-model-invocation: true
 metadata:
-  version: "1.0.3"
+  version: "1.0.4"
 # - Скилл заменяет встроенный /code-review
 # - Если запускать ревьюеров в фоне, то claude считает это "завершение хода"
 #   и отправляет в терминал OSC 7501 "done", так что терминал показывает
@@ -17,29 +17,41 @@ metadata:
 JSON-схема замечаний: `${CLAUDE_SKILL_DIR}/code-review.schema.json`.
 Результаты складывай в scratchpad-директорию сессии `$OUT`.
 
-## Шаг 1. Запусти обоих ревьюеров и дождись их
+## Шаг 1. Актуализируй репозиторий
+
+Выполни fetch репозитория в рабочей директории.
+
+Обновил локальную дефолтную ветку.
+
+Проверь, что текущая ветка содержит все изменения из upstream. Если это
+не так — сообщи и заверши выполнение скилла.
+
+## Шаг 2. Запусти обоих ревьюеров и дождись их
 
 Запусти команду ниже одним вызовом shell с таймаутом 30 минут и дождись
 результата выполнения:
 
 ```sh
+start=$(date +%s)
 codex exec -s read-only --ephemeral \
   --output-schema "${CLAUDE_SKILL_DIR}/code-review.schema.json" \
   -o "$OUT/codex-review.json" - < "${CLAUDE_SKILL_DIR}/code-review.md" \
   > "$OUT/codex-review.log" 2>&1 &
 codex_pid=$!
 
-claude -p \
+claude -p --output-format json \
   --json-schema "$(cat "${CLAUDE_SKILL_DIR}/code-review.schema.json")" \
   < "${CLAUDE_SKILL_DIR}/code-review.md" \
   > "$OUT/claude-review.json" 2> "$OUT/claude-review.log" &
 claude_pid=$!
 
-wait "$codex_pid"; echo "codex exit: $?"
+wait "$codex_pid"; rc=$?
+echo "codex exit: $rc, time: $(( $(date +%s) - start ))s"
 wait "$claude_pid"; echo "claude exit: $?"
+echo "claude effort: ${CLAUDE_CODE_EFFORT_LEVEL:-default}"
 ```
 
-## Шаг 2. Проверь результаты ревьюеров
+## Шаг 3. Проверь результаты ревьюеров
 
 Если один из ревьюеров завершился с ошибкой или его JSON-файл отсутствует или
 пуст, покажи хвост лога и продолжай только с замечаниями второго ревьюера,
@@ -48,7 +60,11 @@ wait "$claude_pid"; echo "claude exit: $?"
 Если оба ревьюера завершились с ошибками или их JSON-файлы отсутствуют или
 пусты, то напиши об этом и заверши ревью.
 
-## Шаг 3. Объедини результаты
+Замечания claude — поле `structured_output` в `$OUT/claude-review.json`; если
+`is_error` равно `true` или поля `structured_output` нет, считай это ошибкой
+ревьюера.
+
+## Шаг 4. Объедини результаты
 
 1. Объедини одинаковые замечания из двух источников в одно, оставив
    наибольший severity. Пометь каждый источником: `claude`, `codex` или
@@ -56,7 +72,7 @@ wait "$claude_pid"; echo "claude exit: $?"
 2. Отсортируй по важности: сначала severity, при равном — совпадение у обоих
    ревьюеров выше.
 
-## Шаг 4. Ответ
+## Шаг 5. Ответ
 
 Напиши общее количество найденных замечаний (`blocker`, `major`, `minor`).
 
@@ -87,3 +103,24 @@ wait "$claude_pid"; echo "claude exit: $?"
     ```
 - Если это замечание не последнее, то добавь одну пустую строку, чтобы
   замечания были визуально отделены друг от друга.
+
+## Шаг 6. Статистика ревьюеров
+
+В конце ответа после пустой строки добавь две строки, по одной на ревьюера:
+модель, effort, время работы и usage. Для упавшего ревьюера покажи то, что
+удалось узнать, остальное замени на `?`. Пример:
+
+```
+🤖 claude: claude-opus-5-5, effort high, 4 мин 12 с, $1.23, 2.1M токенов
+🤖 codex: gpt-6.1-sol, effort high, 3 мин 5 с, 1.2M токенов
+```
+
+Откуда брать значения:
+- claude, `$OUT/claude-review.json`: модель — ключ в `modelUsage` с
+  наибольшим `costUSD`; effort — строка `claude effort:` из вывода шага 1;
+  время — `duration_ms`; usage — `total_cost_usd` и сумма `inputTokens`,
+  `outputTokens`, `cacheReadInputTokens`, `cacheCreationInputTokens` по всем
+  моделям в `modelUsage`.
+- codex, `$OUT/codex-review.log`: модель и effort — строки `model:` и
+  `reasoning effort:` в заголовке лога; время — `time:` из вывода шага 1;
+  usage — число после строки `tokens used` в конце лога.

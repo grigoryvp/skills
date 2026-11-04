@@ -4,7 +4,7 @@ description: Ревью замечания к GitLab / GitHub MR по URL ком
 argument-hint: <URL комментария>
 disable-model-invocation: true
 metadata:
-  version: "1.0.5"
+  version: "1.0.6"
 # - Запуск ревьюеров повторяет скилл code-review.
 # - Codex запускается в workspace-write с сетью: в read-only sandbox нет
 #   сети, и ревьюер не может получить замечание через gh / glab.
@@ -21,10 +21,13 @@ JSON-схема оценки: `${CLAUDE_SKILL_DIR}/comment-review.schema.json`.
 
 ## Шаг 1. Проверка рабочей директории
 
-Выполни fetch репозитория в рабочей директории. Проверь, что в ней
-клонирован проект, к которому замечание, текущая ветка та же, к которой
-замечание и текущая ветка содержит все изменения из upstream. Если это
-не так — сообщи и заверши выполнение скилла.
+Выполни fetch репозитория в рабочей директории.
+
+Обновил локальную дефолтную ветку.
+
+Проверь, что в рабочей директории клонирован проект, к которому замечание,
+текущая ветка та же, к которой замечание и текущая ветка содержит все
+изменения из upstream. Если это не так — сообщи и заверши выполнение скилла.
 
 ## Шаг 2. Запусти обоих ревьюеров и дождись их
 
@@ -37,6 +40,7 @@ printf 'REVIEW_URL=%s\n' '$ARGUMENTS' \
     "${CLAUDE_SKILL_DIR}/comment-review.md" \
   > "$OUT/comment-review-prompt.md"
 
+start=$(date +%s)
 codex exec -s workspace-write --ephemeral \
   -c sandbox_workspace_write.network_access=true \
   --output-schema "${CLAUDE_SKILL_DIR}/comment-review.schema.json" \
@@ -44,14 +48,16 @@ codex exec -s workspace-write --ephemeral \
   > "$OUT/codex-review.log" 2>&1 &
 codex_pid=$!
 
-claude -p \
+claude -p --output-format json \
   --json-schema "$(cat "${CLAUDE_SKILL_DIR}/comment-review.schema.json")" \
   < "$OUT/comment-review-prompt.md" \
   > "$OUT/claude-review.json" 2> "$OUT/claude-review.log" &
 claude_pid=$!
 
-wait "$codex_pid"; echo "codex exit: $?"
+wait "$codex_pid"; rc=$?
+echo "codex exit: $rc, time: $(( $(date +%s) - start ))s"
 wait "$claude_pid"; echo "claude exit: $?"
+echo "claude effort: ${CLAUDE_CODE_EFFORT_LEVEL:-default}"
 ```
 
 ## Шаг 3. Проверь результаты ревьюеров
@@ -62,6 +68,10 @@ wait "$claude_pid"; echo "claude exit: $?"
 
 Если оба ревьюера завершились с ошибками или их JSON-файлы отсутствуют или
 пусты, то напиши об этом и заверши ревью.
+
+Оценка claude — поле `structured_output` в `$OUT/claude-review.json`; если
+`is_error` равно `true` или поля `structured_output` нет, считай это ошибкой
+ревьюера.
 
 ## Шаг 4. Объедини результаты
 
@@ -104,3 +114,24 @@ wait "$claude_pid"; echo "claude exit: $?"
     ⚙️ 1. Значения по умолчанию для настроек.
     ⚙️ 2. Писать в лог не исключение, а информацию о некорректных настройках.
     ```
+
+## Шаг 6. Статистика ревьюеров
+
+В конце ответа после пустой строки добавь две строки, по одной на ревьюера:
+модель, effort, время работы и usage. Для упавшего ревьюера покажи то, что
+удалось узнать, остальное замени на `?`. Пример:
+
+```
+🤖 claude: claude-opus-5-5, effort high, 4 мин 12 с, $1.23, 2.1M токенов
+🤖 codex: gpt-6.1-sol, effort high, 3 мин 5 с, 1.2M токенов
+```
+
+Откуда брать значения:
+- claude, `$OUT/claude-review.json`: модель — ключ в `modelUsage` с
+  наибольшим `costUSD`; effort — строка `claude effort:` из вывода шага 2;
+  время — `duration_ms`; usage — `total_cost_usd` и сумма `inputTokens`,
+  `outputTokens`, `cacheReadInputTokens`, `cacheCreationInputTokens` по всем
+  моделям в `modelUsage`.
+- codex, `$OUT/codex-review.log`: модель и effort — строки `model:` и
+  `reasoning effort:` в заголовке лога; время — `time:` из вывода шага 2;
+  usage — число после строки `tokens used` в конце лога.
