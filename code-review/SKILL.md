@@ -3,13 +3,11 @@ name: code-review
 description: Ревью изменений в текущей ветке
 disable-model-invocation: true
 metadata:
-  version: "1.0.5"
+  version: "1.0.6"
 # - Скилл заменяет встроенный /code-review
 # - Если запускать ревьюеров в фоне, то claude считает это "завершение хода"
 #   и отправляет в терминал OSC 7501 "done", так что терминал показывает
 #   "done". Задача при этом еще не выполнена.
-# - Codex запускается без --ephemeral: лимиты подписки есть только в
-#   файле сессии в ~/.codex/sessions.
 ---
 
 Проведи ревью изменений в текущей ветке двумя независимыми ревьюерами
@@ -35,7 +33,7 @@ JSON-схема замечаний: `${CLAUDE_SKILL_DIR}/code-review.schema.json
 
 ```sh
 start=$(date +%s)
-codex exec -s read-only \
+codex exec -s read-only --ephemeral \
   --output-schema "${CLAUDE_SKILL_DIR}/code-review.schema.json" \
   -o "$OUT/codex-review.json" - < "${CLAUDE_SKILL_DIR}/code-review.md" \
   > "$OUT/codex-review.log" 2>&1 &
@@ -109,30 +107,21 @@ echo "claude effort: ${CLAUDE_CODE_EFFORT_LEVEL:-default}"
 ## Шаг 6. Статистика ревьюеров
 
 В конце ответа после пустой строки добавь две строки, по одной на ревьюера:
-модель, effort, время работы, usage и использование лимитов подписки —
-сначала 5-часового, затем недельного. Для упавшего ревьюера покажи то, что
-удалось узнать, остальное замени на `?`. Перед процентом лимита ставь
-эмодзи цвета: 🟢 до 30% включительно, 🟠 до 80% включительно, 🔴 выше 80%.
+модель, effort, время работы и количество токенов. Для упавшего ревьюера
+покажи то, что удалось узнать, остальное замени на `?`.
 Пример:
 
 ```
-🤖 claude-opus-5-5, high, 4 мин 12 с, $1.23, 2.1M, 🟢25% и 🟠74%
-🤖 gpt-6.1-sol, high, 3 мин 5 с, 1.2M, 🟠67% и 🟠75%
+🤖 claude-opus-5-5, high, 4м 12с, 2.1M
+🤖 gpt-6.1-sol, high, 3м 5с, 1.2M
 ```
 
 Откуда брать значения:
 - claude, последняя строка `$OUT/claude-review.jsonl` (`"type": "result"`):
   модель — ключ в `modelUsage` с наибольшим `costUSD`; время —
-  `duration_ms`; usage — `total_cost_usd` и сумма `inputTokens`,
-  `outputTokens`, `cacheReadInputTokens`, `cacheCreationInputTokens` по всем
-  моделям в `modelUsage`. Effort — строка `claude effort:` из вывода шага 2.
-  Лимиты — `rate_limit_info.unifiedWindows.five_hour.utilization` и
-  `.seven_day.utilization` (доля от 1) из последней строки с
-  `"type": "rate_limit_event"`.
+  `duration_ms`; токены — сумма `inputTokens`, `outputTokens`,
+  `cacheReadInputTokens`, `cacheCreationInputTokens` по всем моделям в
+  `modelUsage`. Effort — строка `claude effort:` из вывода шага 2.
 - codex, `$OUT/codex-review.log`: модель и effort — строки `model:` и
   `reasoning effort:` в заголовке лога; время — `time:` из вывода шага 2;
-  usage — число после строки `tokens used` в конце лога. Лимиты —
-  `rate_limits.primary.used_percent` (5 часов) и
-  `rate_limits.secondary.used_percent` (неделя) из последнего события с
-  `rate_limits` в файле сессии `~/.codex/sessions/**/rollout-*<id>.jsonl`, где
-  `<id>` — строка `session id:` из заголовка лога.
+  токены — число после строки `tokens used` в конце лога.
