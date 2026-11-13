@@ -3,8 +3,9 @@ name: explain
 description: Разъяснение замечания к code review по номеру
 argument-hint: <номер или описание замечания>
 disable-model-invocation: true
+effort: max
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 Расскажи подробно про замечание $ARGUMENTS, чтобы я мог понять в чем проблема
