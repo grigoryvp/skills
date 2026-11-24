@@ -1,17 +1,17 @@
 ---
 name: comment-review
 description: Ревью замечания к GitLab / GitHub MR по URL комментария
-argument-hint: <URL комментария>
+argument-hint: <URL комментария> ...
 disable-model-invocation: true
 metadata:
-  version: "1.0.8"
+  version: "1.0.9"
 # - Запуск ревьюеров повторяет скилл code-review.
 # - Codex запускается в workspace-write с сетью: в read-only sandbox нет
 #   сети, и ревьюер не может получить замечание через gh / glab.
 ---
 
-Оцени замечание к merge request двумя независимыми ревьюерами параллельно,
-затем объедини их оценки. URL замечания:
+Оцени замечания к merge request двумя независимыми ревьюерами параллельно,
+затем объедини их оценки. URL замечаний:
 
 $ARGUMENTS
 
@@ -35,30 +35,45 @@ JSON-схема оценки: `${CLAUDE_SKILL_DIR}/comment-review.schema.json`.
 результата выполнения:
 
 ```sh
-printf 'REVIEW_URL=%s\n' '$ARGUMENTS' \
-  | uvx --from jinja2-cli jinja2 --format=env --strict \
-    "${CLAUDE_SKILL_DIR}/comment-review.md" \
-  > "$OUT/comment-review-prompt.md"
+set --
+i=0
+for url in $(echo '$ARGUMENTS' | tr ',' ' '); do
+  i=$((i + 1))
+  d="$OUT/$i"
+  mkdir -p "$d"
+  echo "$i: $url"
+  printf 'REVIEW_URL=%s\n' "$url" \
+    | uvx --from jinja2-cli jinja2 --format=env --strict \
+      "${CLAUDE_SKILL_DIR}/comment-review.md" \
+    > "$d/comment-review-prompt.md"
 
-start=$(date +%s)
-codex exec -s workspace-write --ephemeral \
-  -c sandbox_workspace_write.network_access=true \
-  --output-schema "${CLAUDE_SKILL_DIR}/comment-review.schema.json" \
-  -o "$OUT/codex-review.json" - < "$OUT/comment-review-prompt.md" \
-  > "$OUT/codex-review.log" 2>&1 &
-codex_pid=$!
+  start=$(date +%s)
+  {
+    codex exec -s workspace-write --ephemeral \
+      -c sandbox_workspace_write.network_access=true \
+      --output-schema "${CLAUDE_SKILL_DIR}/comment-review.schema.json" \
+      -o "$d/codex-review.json" - < "$d/comment-review-prompt.md" \
+      > "$d/codex-review.log" 2>&1
+    echo "$i codex exit: $?, time: $(( $(date +%s) - start ))s"
+  } &
+  set -- "$@" $!
 
-claude -p --output-format stream-json --verbose \
-  --json-schema "$(cat "${CLAUDE_SKILL_DIR}/comment-review.schema.json")" \
-  < "$OUT/comment-review-prompt.md" \
-  > "$OUT/claude-review.jsonl" 2> "$OUT/claude-review.log" &
-claude_pid=$!
+  {
+    claude -p --output-format stream-json --verbose \
+      --json-schema "$(cat "${CLAUDE_SKILL_DIR}/comment-review.schema.json")" \
+      < "$d/comment-review-prompt.md" \
+      > "$d/claude-review.jsonl" 2> "$d/claude-review.log"
+    echo "$i claude exit: $?"
+  } &
+  set -- "$@" $!
+done
 
-wait "$codex_pid"; rc=$?
-echo "codex exit: $rc, time: $(( $(date +%s) - start ))s"
-wait "$claude_pid"; echo "claude exit: $?"
+wait "$@"
 echo "claude effort: ${CLAUDE_CODE_EFFORT_LEVEL:-default}"
 ```
+
+Шаги 3–6 выполни для каждого URL по порядку, считая `$OUT` директорией
+`$OUT/N` N-го URL. Ответы для разных URL отдели пустой строкой.
 
 ## Шаг 3. Проверь результаты ревьюеров
 
